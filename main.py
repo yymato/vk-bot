@@ -1,6 +1,7 @@
-from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
-import random, vk_api
+from flask import Flask, render_template
+import vk_api
 
+app = Flask(__name__)
 vk_session = vk_api.VkApi('LOGIN', 'PASSWORD')
 try:
     vk_session.auth(token_only=True)
@@ -8,18 +9,40 @@ except vk_api.AuthError as error_msg:
     print(f'Ошибка авторизации: {error_msg}')
     quit()
 
-vk_session_bot = vk_api.VkApi(
-    token='TOKEN')
-vk_bot = vk_session_bot.get_api()
-longpoll = VkBotLongPoll(vk_session_bot, 12345)
 
-photo_ids = [f"photo{i['owner_id']}_{i['id']}" for i
-             in vk_session.get_api().photos.get(group_id=12345, album_id=12345)['items']]
-for event in longpoll.listen():
-    if event.type == VkBotEventType.MESSAGE_NEW:
-        user_info = vk_bot.users.get(user_ids=event.object.message['from_id'], fields='first_name')[0]
+@app.route('/vk_stats/<int:group_id>')
+def homepage(group_id):
+    stats = vk_session.get_api().stats.get(group_id=group_id, fields='reach')[:10]
+    total_likes = 0
+    total_comments = 0
+    total_subscribed = 0
+    age_map = {
+        '12-18': 0, '18-21': 0, '21-24': 0, '24-27': 0,
+        '27-30': 0, '30-35': 0, '35-45': 0, '45-100': 0
+    }
+    cities = []
 
-        vk_bot.messages.send(user_id=event.object.message['from_id'],
-                             message=f"Привет, {user_info['first_name']}!",
-                             attachment=random.choice(photo_ids),
-                             random_id=0)
+    for i in stats:
+        total_likes += i.get('likes', 0) or 0
+        total_comments += i.get('comments', 0) or 0
+        total_subscribed += i.get('subscribed', 0) or 0
+
+        for age in i.get('age_distribution', []):
+            age_value = age.get('value')
+            if age_value in age_map:
+                age_map[age_value] += age.get('count', 0)
+
+        for city in i.get('cities', []):
+            city_name = city.get('name')
+            if city_name and city_name not in cities:
+                cities.append(city_name)
+
+    return render_template('base.html',
+                           total_likes=total_likes,
+                           total_comments=total_comments,
+                           total_subscribed=total_subscribed,
+                           age_map=age_map,
+                           cities=cities)
+
+if __name__ == '__main__':
+    app.run()

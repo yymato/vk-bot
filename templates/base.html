@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+    <h2>Activities</h2>
+    <table>
+        <tr><td>likes</td><td>{{ total_likes }}</td></tr>
+        <tr><td>comments</td><td>{{ total_comments }}</td></tr>
+        <tr><td>subscribed</td><td>{{ total_subscribed }}</td></tr>
+    </table>
+
+    <h2>Ages</h2>
+    <table>
+        {% for label in ['12-18','18-21','21-24','24-27','27-30','30-35','35-45','45-100'] %}
+        <tr><td>{{ label }}</td><td>{{ age_map[label] }}</td></tr>
+        {% endfor %}
+    </table>
+
+    <h2 >Cities</h2>
+    <table>
+        {% for city in cities %}
+        <tr><td>{{ city }}</td></tr>
+        {% endfor %}
+    </table>
+</body>
+
+</html>
