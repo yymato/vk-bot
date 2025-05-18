@@ -1,49 +1,55 @@
-from random import random
-
-import vk_api
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
+import vk_api, requests, json
 
-import config
+vk_session = vk_api.VkApi(
+    token='TOKEN')
+longpoll = VkBotLongPoll(vk_session, 230403835)
+vk = vk_session.get_api()
+upload = vk_api.VkUpload(vk_session)
 
+kb = {
+    "one_time": False,
+    "buttons": [[{"action": {"type": "text", "label": "map"}, "color": "primary"}],
+                [{"action": {"type": "text", "label": "sat"}, "color": "primary"}]]
+}
+users_data = {}
 
-def captcha_handler(captcha):
-    key = input('Enter captcha code {0}: '.format(captcha.get_url())).strip()
-    return captcha.try_again(key)
+kb = json.dumps(kb, ensure_ascii=False)
 
+for event in longpoll.listen():
+    if event.type == VkBotEventType.MESSAGE_NEW:
+        if event.obj.message['text'] in ['map', 'sat']:
+            if event.obj.message['from_id'] not in users_data:
+                vk.messages.send(user_id=event.obj.message['from_id'], random_id=0,
+                                 message=f"Сначала напишите, что хотите увидеть")
+            else:
+                response = requests.get(
+                    f'http://static-maps.yandex.ru/1.x/?ll={users_data[event.obj.message['from_id']]
+                    ['geo']}&z=10&l={event.obj.message['text']}')
+                with open(f'{event.obj.message['from_id']}.png', 'wb') as f:
+                    f.write(response.content)
+                photo = upload.photo_messages(f'{event.obj.message['from_id']}.png')[0]
+                vk.messages.send(user_id=event.obj.message['from_id'], random_id=0,
+                                 attachment=f"photo{photo['owner_id']}_{photo['id']}",
+                                 message=f"Это {users_data[event.obj.message['from_id']]['name']}. Что вы хотите увидеть?")
+        else:
+            response = requests.get('https://geocode-maps.yandex.ru/v1',
+                               params={'apikey': '62621221-4d79-48d0-83e1-f7b8aa92eca3',
+                                       'geocode': event.obj.message['text'],
+                                       'lang': 'ru_RU',
+                                       'format': 'json'})
+            if response:
+                geo_pos = response.json()['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']['Point'][
+                    'pos'].replace(' ', ',')
 
-def auth_handler():
-    key = input('Enter authentication code: ')
-    remember_device = True
-    return key, remember_device
+                if event.obj.message['from_id'] not in users_data:
+                    users_data[event.obj.message['from_id']] = {'geo': geo_pos, 'name': event.obj.message['text']}
+                else:
+                    users_data[event.obj.message['from_id']]['geo'] = geo_pos
+                    users_data[event.obj.message['from_id']]['name'] = event.obj.message['text']
 
-
-def main():
-    login, password = config.LOGPAS
-    vk_session = vk_api.VkApi(login, password)
-    try:
-        vk_session.auth(token_only=True)
-    except vk_api.AuthError as error_msg:
-        print(error_msg)
-        return
-
-    upload = vk_api.VkUpload(vk_session)
-    photos = ['static/img/pic_cat.jpg', 'static/img/kitten.jpg']
-
-    for item in photos:
-        photo = upload.photo(
-            item,
-            album_id=config.ALBUM_ID,
-            group_id=config.GROUP_ID
-        )
-        vk_photo_url = 'https://vk.com/photo{}_{}'.format(
-            photo[0]['owner_id'], photo[0]['id']
-        )
-        vk_photo_id = f"photo{photo[0]['owner_id']}_{photo[0]['id']}"
-
-        print(photo, vk_photo_id, vk_photo_url, sep="\n")
-        vk = vk_session.get_api()
-        vk.wall.post(message="Cats", attachments=[vk_photo_id])
-
-
-if __name__ == '__main__':
-    main()
+                vk.messages.send(user_id=event.obj.message['from_id'], random_id=0, keyboard=kb,
+                                 message=f"Отлично, теперь выберите на клавиатуре какой в каком типе карты показать")
+            else:
+                vk.messages.send(user_id=event.obj.message['from_id'], random_id=0,
+                                 message=f"Ошибка геокодирования. Возможно такого места не существует")
