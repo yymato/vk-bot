@@ -1,55 +1,25 @@
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
-import vk_api, requests, json
+import random, vk_api
 
-vk_session = vk_api.VkApi(
+vk_session = vk_api.VkApi('LOGIN', 'PASSWORD')
+try:
+    vk_session.auth(token_only=True)
+except vk_api.AuthError as error_msg:
+    print(f'Ошибка авторизации: {error_msg}')
+    quit()
+
+vk_session_bot = vk_api.VkApi(
     token='TOKEN')
-longpoll = VkBotLongPoll(vk_session, 230403835)
-vk = vk_session.get_api()
-upload = vk_api.VkUpload(vk_session)
+vk_bot = vk_session_bot.get_api()
+longpoll = VkBotLongPoll(vk_session_bot, 12345)
 
-kb = {
-    "one_time": False,
-    "buttons": [[{"action": {"type": "text", "label": "map"}, "color": "primary"}],
-                [{"action": {"type": "text", "label": "sat"}, "color": "primary"}]]
-}
-users_data = {}
-
-kb = json.dumps(kb, ensure_ascii=False)
-
+photo_ids = [f"photo{i['owner_id']}_{i['id']}" for i
+             in vk_session.get_api().photos.get(group_id=12345, album_id=12345)['items']]
 for event in longpoll.listen():
     if event.type == VkBotEventType.MESSAGE_NEW:
-        if event.obj.message['text'] in ['map', 'sat']:
-            if event.obj.message['from_id'] not in users_data:
-                vk.messages.send(user_id=event.obj.message['from_id'], random_id=0,
-                                 message=f"Сначала напишите, что хотите увидеть")
-            else:
-                response = requests.get(
-                    f'http://static-maps.yandex.ru/1.x/?ll={users_data[event.obj.message['from_id']]
-                    ['geo']}&z=10&l={event.obj.message['text']}')
-                with open(f'{event.obj.message['from_id']}.png', 'wb') as f:
-                    f.write(response.content)
-                photo = upload.photo_messages(f'{event.obj.message['from_id']}.png')[0]
-                vk.messages.send(user_id=event.obj.message['from_id'], random_id=0,
-                                 attachment=f"photo{photo['owner_id']}_{photo['id']}",
-                                 message=f"Это {users_data[event.obj.message['from_id']]['name']}. Что вы хотите увидеть?")
-        else:
-            response = requests.get('https://geocode-maps.yandex.ru/v1',
-                               params={'apikey': '62621221-4d79-48d0-83e1-f7b8aa92eca3',
-                                       'geocode': event.obj.message['text'],
-                                       'lang': 'ru_RU',
-                                       'format': 'json'})
-            if response:
-                geo_pos = response.json()['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']['Point'][
-                    'pos'].replace(' ', ',')
+        user_info = vk_bot.users.get(user_ids=event.object.message['from_id'], fields='first_name')[0]
 
-                if event.obj.message['from_id'] not in users_data:
-                    users_data[event.obj.message['from_id']] = {'geo': geo_pos, 'name': event.obj.message['text']}
-                else:
-                    users_data[event.obj.message['from_id']]['geo'] = geo_pos
-                    users_data[event.obj.message['from_id']]['name'] = event.obj.message['text']
-
-                vk.messages.send(user_id=event.obj.message['from_id'], random_id=0, keyboard=kb,
-                                 message=f"Отлично, теперь выберите на клавиатуре какой в каком типе карты показать")
-            else:
-                vk.messages.send(user_id=event.obj.message['from_id'], random_id=0,
-                                 message=f"Ошибка геокодирования. Возможно такого места не существует")
+        vk_bot.messages.send(user_id=event.object.message['from_id'],
+                             message=f"Привет, {user_info['first_name']}!",
+                             attachment=random.choice(photo_ids),
+                             random_id=0)
